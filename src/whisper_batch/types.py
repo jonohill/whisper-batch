@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 
 @dataclass(slots=True)
@@ -21,17 +20,12 @@ class Chunk:
     end: float
     extract_start: float | None = None  # defaults to start (no pad)
     extract_end: float | None = None    # defaults to end (no pad)
-    path: Path | None = None            # populated once the WAV is extracted
 
     def __post_init__(self) -> None:
         if self.extract_start is None:
             self.extract_start = self.start
         if self.extract_end is None:
             self.extract_end = self.end
-
-    @property
-    def duration(self) -> float:
-        return self.end - self.start
 
     @property
     def extract_duration(self) -> float:

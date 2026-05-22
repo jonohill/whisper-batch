@@ -77,4 +77,3 @@ async def extract_chunk(source: Path, chunk: Chunk, out_path: Path, cfg: Config)
         "-c:a", "pcm_s16le",
         str(out_path),
     ])
-    chunk.path = out_path
