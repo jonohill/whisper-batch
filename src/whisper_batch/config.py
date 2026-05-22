@@ -32,6 +32,13 @@ class Config:
     workers: int = field(default_factory=_default_workers)
     threads: int = 2  # threads per whisper.cpp worker
 
+    # Backend
+    backend: str = "cli"  # "cli" (process per chunk) or "server" (warm pool)
+    whisper_server_bin: str = "whisper-server"
+    server_host: str = "127.0.0.1"
+    server_port: int = 18080  # base port; the pool uses port .. port+workers-1
+    no_gpu: bool = False      # pass -ng to whisper.cpp (applies to both backends)
+
     # Chunking
     max_chunk_s: float = 28.0        # stay under Whisper's 30s receptive field
     min_chunk_s: float = 1.0         # avoid wastefully tiny chunks

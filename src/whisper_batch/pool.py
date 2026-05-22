@@ -1,7 +1,8 @@
-"""Concurrency layer: run many chunks through whisper.cpp at once.
+"""Concurrency layer: run chunks through a transcription backend in parallel.
 
-Each chunk is an independent whisper.cpp subprocess, so there is no GIL concern;
-an :class:`asyncio.Semaphore` simply caps how many run simultaneously.
+For each chunk the pool extracts its WAV, hands it to the backend (CLI or warm
+server), and shifts the returned chunk-local timestamps into global time. An
+:class:`asyncio.Semaphore` caps how many chunks are in flight at once.
 """
 
 from __future__ import annotations
@@ -10,8 +11,9 @@ import asyncio
 import sys
 from pathlib import Path
 
+from . import audio
+from .backend import Backend
 from .config import Config
-from .transcribe import transcribe_chunk
 from .types import Chunk, Segment
 
 
@@ -20,13 +22,14 @@ async def transcribe_chunks(
     chunks: list[Chunk],
     workdir: Path,
     cfg: Config,
+    backend: Backend,
     *,
     progress: bool = True,
 ) -> list[Segment]:
     """Transcribe all chunks with at most ``cfg.workers`` in flight.
 
-    Results are returned flattened and in chunk order (``asyncio.gather``
-    preserves input order regardless of completion order).
+    ``asyncio.gather`` preserves input order, so the flattened result is in
+    chunk order regardless of completion order.
     """
     sem = asyncio.Semaphore(cfg.workers)
     total = len(chunks)
@@ -35,7 +38,13 @@ async def transcribe_chunks(
     async def worker(chunk: Chunk) -> list[Segment]:
         nonlocal done
         async with sem:
-            segments = await transcribe_chunk(source, chunk, workdir, cfg)
+            wav = workdir / f"chunk_{chunk.index:05d}.wav"
+            await audio.extract_chunk(source, chunk, wav, cfg)
+            local = await backend.transcribe(wav)
+            if not cfg.keep_temp:
+                wav.unlink(missing_ok=True)
+        offset = chunk.start
+        segments = [Segment(s.start + offset, s.end + offset, s.text) for s in local]
         done += 1
         if progress:
             _log_progress(done, total, chunk)

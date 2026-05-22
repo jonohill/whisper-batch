@@ -1,6 +1,9 @@
 """Top-level orchestration tying the stages together.
 
     probe duration -> detect silence -> plan chunks -> transcribe (pool) -> assemble
+
+The chosen backend is started (warm servers spawned, or nothing for the CLI
+backend) for the duration of the run via its async context manager.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from pathlib import Path
 
 from . import audio, segmentation
 from .assemble import assemble
+from .backend import make_backend
 from .config import Config
 from .pool import transcribe_chunks
 from .types import Transcript
@@ -36,10 +40,12 @@ async def transcribe_file(
 
     workdir = Path(tempfile.mkdtemp(prefix="whisper_batch_"))
     log.debug("workdir: %s", workdir)
+    backend = make_backend(cfg)
     try:
-        segments = await transcribe_chunks(
-            source, chunks, workdir, cfg, progress=progress
-        )
+        async with backend:
+            segments = await transcribe_chunks(
+                source, chunks, workdir, cfg, backend, progress=progress
+            )
     finally:
         if cfg.keep_temp:
             log.info("kept intermediate files in %s", workdir)

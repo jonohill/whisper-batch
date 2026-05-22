@@ -39,7 +39,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--max-chunk", type=float, default=28.0, help="max chunk length, s")
     p.add_argument("--silence-noise", type=float, default=-30.0, help="silence floor, dB")
     p.add_argument("--min-silence", type=float, default=0.5, help="min silence length, s")
+    p.add_argument("--backend", choices=["cli", "server"], default="cli",
+                   help="cli: one process per chunk (default); "
+                        "server: warm whisper-server pool (loads the model once)")
     p.add_argument("--whisper-bin", default="whisper-cli", help="whisper.cpp CLI binary")
+    p.add_argument("--whisper-server-bin", default="whisper-server",
+                   help="whisper.cpp server binary (for --backend server)")
+    p.add_argument("--server-host", default="127.0.0.1", help="host for the server pool")
+    p.add_argument("--server-port", type=int, default=18080,
+                   help="base port for the server pool (uses port .. port+workers-1)")
     p.add_argument("--no-gpu", action="store_true",
                    help="disable GPU (passes -ng to whisper.cpp); useful on CPU-bound hosts")
     p.add_argument("--keep-temp", action="store_true", help="keep intermediate files")
@@ -69,14 +77,18 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = Config(
         model=Path(args.model),
+        backend=args.backend,
         whisper_bin=args.whisper_bin,
+        whisper_server_bin=args.whisper_server_bin,
+        server_host=args.server_host,
+        server_port=args.server_port,
         language=args.language,
         threads=args.threads,
         max_chunk_s=args.max_chunk,
         silence_noise_db=args.silence_noise,
         min_silence_s=args.min_silence,
         keep_temp=args.keep_temp,
-        extra_whisper_args=["-ng"] if args.no_gpu else [],
+        no_gpu=args.no_gpu,
     )
     if args.workers:
         cfg.workers = args.workers
