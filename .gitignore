@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# uv
+# (uv.lock is intentionally committed)
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Transcription scratch / outputs
+*.wav.json
+whisper_batch_*/
