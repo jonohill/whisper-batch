@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 from . import audio
-from .backend import Backend
 from .config import Config
+from .server import ServerBackend
 from .types import Chunk, Segment
 
 
@@ -22,14 +22,15 @@ async def transcribe_chunks(
     chunks: list[Chunk],
     workdir: Path,
     cfg: Config,
-    backend: Backend,
+    backend: ServerBackend,
     *,
     progress: bool = True,
-) -> list[Segment]:
+) -> list[list[Segment]]:
     """Transcribe all chunks with at most ``cfg.workers`` in flight.
 
-    ``asyncio.gather`` preserves input order, so the flattened result is in
-    chunk order regardless of completion order.
+    Returns one segment list per chunk, aligned to *chunks* order
+    (``asyncio.gather`` preserves input order). Timestamps are global but not yet
+    de-duplicated across the padded overlaps — :func:`assemble` does that.
     """
     sem = asyncio.Semaphore(cfg.workers)
     total = len(chunks)
@@ -43,15 +44,15 @@ async def transcribe_chunks(
             local = await backend.transcribe(wav)
             if not cfg.keep_temp:
                 wav.unlink(missing_ok=True)
-        offset = chunk.start
+        # Timestamps are relative to the (padded) extract window.
+        offset = chunk.extract_start
         segments = [Segment(s.start + offset, s.end + offset, s.text) for s in local]
         done += 1
         if progress:
             _log_progress(done, total, chunk)
         return segments
 
-    results = await asyncio.gather(*(worker(c) for c in chunks))
-    return [seg for chunk_segs in results for seg in chunk_segs]
+    return await asyncio.gather(*(worker(c) for c in chunks))
 
 
 def _log_progress(done: int, total: int, chunk: Chunk) -> None:

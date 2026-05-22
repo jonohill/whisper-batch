@@ -6,7 +6,6 @@ loop stays free while a request is in flight.
 
 from __future__ import annotations
 
-import json
 import urllib.error
 import urllib.request
 import uuid
@@ -30,8 +29,8 @@ def post_file(
     file_path: Path,
     fields: dict[str, str],
     timeout: float = 1800.0,
-) -> dict:
-    """POST *file_path* plus form *fields* as multipart/form-data; return JSON."""
+) -> str:
+    """POST *file_path* plus form *fields* as multipart/form-data; return the body."""
     boundary = uuid.uuid4().hex
     head = bytearray()
     for key, value in fields.items():
@@ -51,4 +50,4 @@ def post_file(
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return resp.read().decode("utf-8", "replace")

@@ -8,16 +8,34 @@ from pathlib import Path
 
 @dataclass(slots=True)
 class Chunk:
-    """A planned slice of the source audio, in seconds from the start."""
+    """A planned slice of the source audio, in seconds from the start.
+
+    ``start``/``end`` are the *logical* span — a clean partition of the timeline
+    used to assign transcript segments. ``extract_start``/``extract_end`` are the
+    slightly padded window actually fed to whisper, so words straddling a cut are
+    captured whole in context. The padding is dropped again at assembly.
+    """
 
     index: int
     start: float
     end: float
-    path: Path | None = None  # populated once the WAV is extracted
+    extract_start: float | None = None  # defaults to start (no pad)
+    extract_end: float | None = None    # defaults to end (no pad)
+    path: Path | None = None            # populated once the WAV is extracted
+
+    def __post_init__(self) -> None:
+        if self.extract_start is None:
+            self.extract_start = self.start
+        if self.extract_end is None:
+            self.extract_end = self.end
 
     @property
     def duration(self) -> float:
         return self.end - self.start
+
+    @property
+    def extract_duration(self) -> float:
+        return self.extract_end - self.extract_start
 
 
 @dataclass(slots=True)

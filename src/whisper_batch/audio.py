@@ -61,16 +61,17 @@ def detect_silence(source: Path, cfg: Config) -> list[tuple[float, float]]:
 
 
 async def extract_chunk(source: Path, chunk: Chunk, out_path: Path, cfg: Config) -> None:
-    """Extract a 16 kHz mono PCM WAV for *chunk* from *source*.
+    """Extract a 16 kHz mono PCM WAV for *chunk*'s padded window from *source*.
 
-    ``-ss`` before ``-i`` performs a fast input seek; output is re-encoded to the
-    format whisper.cpp expects.
+    Uses the chunk's ``extract_start``/``extract_duration`` (logical span plus
+    context pad). ``-ss`` before ``-i`` performs a fast input seek; output is
+    re-encoded to the format whisper.cpp expects.
     """
     await run_async([
         cfg.ffmpeg_bin,
         "-hide_banner", "-nostdin", "-y",
-        "-ss", f"{chunk.start:.3f}",
-        "-t", f"{chunk.duration:.3f}",
+        "-ss", f"{chunk.extract_start:.3f}",
+        "-t", f"{chunk.extract_duration:.3f}",
         "-i", str(source),
         "-ar", "16000", "-ac", "1",
         "-c:a", "pcm_s16le",

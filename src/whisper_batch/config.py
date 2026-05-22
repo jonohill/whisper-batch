@@ -22,29 +22,27 @@ class Config:
     model: Path
 
     # External binaries (overridable for non-standard installs).
-    whisper_bin: str = "whisper-cli"
+    whisper_server_bin: str = "whisper-server"
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
 
     language: str | None = None  # None => whisper auto-detects per chunk
 
-    # Concurrency
+    # Concurrency (also the number of warm servers)
     workers: int = field(default_factory=_default_workers)
-    threads: int = 2  # threads per whisper.cpp worker
+    threads: int = 2  # threads per whisper-server
 
-    # Backend
-    backend: str = "cli"  # "cli" (process per chunk) or "server" (warm pool)
-    whisper_server_bin: str = "whisper-server"
+    # Server pool
     server_host: str = "127.0.0.1"
     server_port: int = 18080  # base port; the pool uses port .. port+workers-1
-    no_gpu: bool = False      # pass -ng to whisper.cpp (applies to both backends)
+    no_gpu: bool = False      # pass -ng to whisper.cpp
 
     # Chunking
     max_chunk_s: float = 28.0        # stay under Whisper's 30s receptive field
     min_chunk_s: float = 1.0         # avoid wastefully tiny chunks
+    overlap_s: float = 0.5           # context pad each side of a chunk (for clean cuts)
     silence_noise_db: float = -30.0  # ffmpeg silencedetect noise floor (dB)
     min_silence_s: float = 0.5       # ffmpeg silencedetect minimum silence (s)
 
     # Misc
     keep_temp: bool = False
-    extra_whisper_args: list[str] = field(default_factory=list)

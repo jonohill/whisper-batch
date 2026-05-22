@@ -1,24 +1,31 @@
-"""Warm worker pool: a set of long-lived ``whisper-server`` processes.
+"""The transcription engine: a warm pool of long-lived ``whisper-server`` processes.
 
 Each server loads the model once at startup; chunks are dispatched to whichever
-server is currently free (an :class:`asyncio.Queue` of idle servers). This is
-what removes the per-chunk model-reload cost the CLI backend pays.
+server is currently free (an :class:`asyncio.Queue` of idle servers). Loading the
+model once is what makes this faster than spawning a CLI per chunk.
+
+Requests use ``response_format=srt`` rather than ``verbose_json``: we only need
+segment timestamps, and asking whisper for *word* timestamps costs ~75% more
+inference time (it computes token-level alignment). SRT gives the segment
+boundaries we use at the cheap price.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 import tempfile
 from pathlib import Path
 
 from . import http
-from .backend import Backend
 from .config import Config
 from .types import Segment
 
 log = logging.getLogger(__name__)
+
+_SRT_TIME = re.compile(r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})")
 
 
 class WhisperServer:
@@ -94,14 +101,24 @@ class WhisperServer:
         return "\n".join(content.splitlines()[-lines:])
 
 
-class ServerBackend(Backend):
-    """Dispatches chunks across a pool of warm whisper-server instances."""
+class ServerBackend:
+    """Dispatches chunks across a pool of warm whisper-server instances.
+
+    Use as an async context manager: ``async with ServerBackend(cfg) as backend``.
+    """
 
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
         self.servers: list[WhisperServer] = []
         self._free: asyncio.Queue[WhisperServer] | None = None
         self._logdir: Path | None = None
+
+    async def __aenter__(self) -> "ServerBackend":
+        await self.start()
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.stop()
 
     async def start(self) -> None:
         cfg = self.cfg
@@ -115,7 +132,15 @@ class ServerBackend(Backend):
             "starting %d whisper-server(s) on ports %d-%d ...",
             n, cfg.server_port, cfg.server_port + n - 1,
         )
-        await asyncio.gather(*(s.start() for s in self.servers))
+        # Wait for every server to settle before deciding, so a failure can't
+        # leave the others orphaned. Clean up and re-raise if any didn't start.
+        results = await asyncio.gather(
+            *(s.start() for s in self.servers), return_exceptions=True
+        )
+        errors = [r for r in results if isinstance(r, BaseException)]
+        if errors:
+            await self.stop()
+            raise errors[0]
 
         self._free = asyncio.Queue()
         for server in self.servers:
@@ -128,30 +153,44 @@ class ServerBackend(Backend):
             shutil.rmtree(self._logdir, ignore_errors=True)
 
     async def transcribe(self, wav_path: Path) -> list[Segment]:
+        """Transcribe *wav_path* into chunk-local segments."""
         if self._free is None:
             raise RuntimeError("ServerBackend.start() was not called")
         server = await self._free.get()
         try:
-            data = await asyncio.to_thread(
+            body = await asyncio.to_thread(
                 http.post_file,
                 server.inference_url,
                 "file",
                 wav_path,
-                {
-                    "response_format": "verbose_json",
-                    "language": self.cfg.language or "auto",
-                },
+                {"response_format": "srt", "language": self.cfg.language or "auto"},
             )
         finally:
             self._free.put_nowait(server)
-        return _parse_server_json(data)
+        return _parse_srt(body)
 
 
-def _parse_server_json(data: dict) -> list[Segment]:
-    """whisper-server verbose_json: start/end are seconds, relative to the chunk."""
+def _parse_srt(text: str) -> list[Segment]:
+    """Parse SRT (or VTT) cues into segments with timestamps in seconds."""
     segments: list[Segment] = []
-    for seg in data.get("segments", []):
-        text = (seg.get("text") or "").strip()
-        if text:
-            segments.append(Segment(float(seg["start"]), float(seg["end"]), text))
+    for block in re.split(r"\n\s*\n", text.strip()):
+        lines = [ln for ln in block.splitlines() if ln.strip()]
+        time_line = next((ln for ln in lines if "-->" in ln), None)
+        if time_line is None:
+            continue
+        start_s, _, end_s = time_line.partition("-->")
+        start, end = _srt_to_seconds(start_s), _srt_to_seconds(end_s)
+        if start is None or end is None:
+            continue
+        body = " ".join(lines[lines.index(time_line) + 1 :]).strip()
+        if body:
+            segments.append(Segment(start, end, body))
     return segments
+
+
+def _srt_to_seconds(stamp: str) -> float | None:
+    m = _SRT_TIME.search(stamp)
+    if m is None:
+        return None
+    h, mi, s, ms = (int(g) for g in m.groups())
+    return h * 3600 + mi * 60 + s + ms / 1000.0

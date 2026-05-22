@@ -34,7 +34,16 @@ def plan_chunks(
         cut = candidate if candidate is not None else hard_end
         if cut <= t:  # guarantee forward progress
             cut = hard_end
-        chunks.append(Chunk(index=idx, start=t, end=min(cut, duration)))
+        end = min(cut, duration)
+        chunks.append(
+            Chunk(
+                index=idx,
+                start=t,
+                end=end,
+                extract_start=max(0.0, t - cfg.overlap_s),
+                extract_end=min(duration, end + cfg.overlap_s),
+            )
+        )
         t = cut
         idx += 1
 

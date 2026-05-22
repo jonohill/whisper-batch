@@ -15,9 +15,9 @@ from pathlib import Path
 
 from . import audio, segmentation
 from .assemble import assemble
-from .backend import make_backend
 from .config import Config
 from .pool import transcribe_chunks
+from .server import ServerBackend
 from .types import Transcript
 
 log = logging.getLogger(__name__)
@@ -40,10 +40,10 @@ async def transcribe_file(
 
     workdir = Path(tempfile.mkdtemp(prefix="whisper_batch_"))
     log.debug("workdir: %s", workdir)
-    backend = make_backend(cfg)
+    backend = ServerBackend(cfg)
     try:
         async with backend:
-            segments = await transcribe_chunks(
+            chunk_segments = await transcribe_chunks(
                 source, chunks, workdir, cfg, backend, progress=progress
             )
     finally:
@@ -52,4 +52,4 @@ async def transcribe_file(
         else:
             shutil.rmtree(workdir, ignore_errors=True)
 
-    return assemble(segments)
+    return assemble(chunks, chunk_segments)
