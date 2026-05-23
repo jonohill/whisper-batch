@@ -2,7 +2,6 @@
 name = "whisper-batch"
 version = "0.1.0"
 description = "Parallel whisper.cpp transcription via silence-aware audio chunking."
-readme = "README.md"
 requires-python = ">=3.10"
 # The CLI has no Python runtime dependencies — ffmpeg and whisper.cpp are
 # external binaries. The optional HTTP server (`[server]` extra) adds FastAPI.
