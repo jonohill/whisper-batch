@@ -30,7 +30,7 @@ async def transcribe_file(
     duration = audio.probe_duration(source, cfg)
     log.info("duration: %.1fs", duration)
 
-    silences = audio.detect_silence(source, cfg)
+    silences = audio.detect_silence(source, cfg, duration)
     log.info("detected %d silence interval(s)", len(silences))
 
     chunks = segmentation.plan_chunks(duration, silences, cfg)

@@ -36,7 +36,7 @@ async def _noop_extract(source, chunk, wav, cfg):
 async def test_pipeline_wires_stages(monkeypatch):
     events: list[str] = []
     monkeypatch.setattr(audio_mod, "probe_duration", lambda src, c: 60.0)
-    monkeypatch.setattr(audio_mod, "detect_silence", lambda src, c: [])
+    monkeypatch.setattr(audio_mod, "detect_silence", lambda src, c, dur=None: [])
     monkeypatch.setattr(audio_mod, "extract_chunk", _noop_extract)
     monkeypatch.setattr(pipeline_mod, "ServerBackend", _fake_backend_class(events))
 
@@ -52,7 +52,7 @@ async def test_pipeline_wires_stages(monkeypatch):
 async def test_pipeline_keep_temp_leaves_workdir(monkeypatch, tmp_path):
     events: list[str] = []
     monkeypatch.setattr(audio_mod, "probe_duration", lambda src, c: 30.0)
-    monkeypatch.setattr(audio_mod, "detect_silence", lambda src, c: [])
+    monkeypatch.setattr(audio_mod, "detect_silence", lambda src, c, dur=None: [])
     monkeypatch.setattr(audio_mod, "extract_chunk", _noop_extract)
     monkeypatch.setattr(pipeline_mod, "ServerBackend", _fake_backend_class(events))
 
@@ -70,7 +70,7 @@ async def test_pipeline_keep_temp_leaves_workdir(monkeypatch, tmp_path):
 async def test_pipeline_empty_when_no_chunks(monkeypatch):
     events: list[str] = []
     monkeypatch.setattr(audio_mod, "probe_duration", lambda src, c: 0.0)
-    monkeypatch.setattr(audio_mod, "detect_silence", lambda src, c: [])
+    monkeypatch.setattr(audio_mod, "detect_silence", lambda src, c, dur=None: [])
     monkeypatch.setattr(pipeline_mod, "ServerBackend", _fake_backend_class(events))
 
     transcript = await transcribe_file(Path("audio.mp3"), Config(model=Path("m")),

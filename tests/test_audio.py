@@ -37,10 +37,39 @@ def test_detect_silence_parses_intervals(monkeypatch, cfg):
 
 
 def test_detect_silence_orphan_end_uses_duration(monkeypatch, cfg):
-    # silence_end with no preceding start -> start derived from the duration
+    # silence_end with no preceding start -> start derived from silence_duration
     stderr = "[silencedetect] silence_end: 2.0 | silence_duration: 1.0"
     monkeypatch.setattr(audio_mod, "run", lambda cmd: ("", stderr))
     assert detect_silence(Path("a"), cfg) == [(1.0, 2.0)]
+
+
+def test_detect_silence_trailing_silence_closed_at_duration(monkeypatch, cfg):
+    # silence running to EOF: a silence_start with no matching silence_end is
+    # closed at the file duration so the planner can still cut there.
+    stderr = "\n".join([
+        "[silencedetect] silence_start: 1.0",
+        "[silencedetect] silence_end: 2.0 | silence_duration: 1.0",
+        "[silencedetect] silence_start: 9.0",
+    ])
+    monkeypatch.setattr(audio_mod, "run", lambda cmd: ("", stderr))
+    assert detect_silence(Path("a"), cfg, duration=10.0) == [(1.0, 2.0), (9.0, 10.0)]
+
+
+def test_detect_silence_trailing_dropped_without_duration(monkeypatch, cfg):
+    # without a duration we cannot close a dangling start, so it is discarded.
+    stderr = "[silencedetect] silence_start: 9.0"
+    monkeypatch.setattr(audio_mod, "run", lambda cmd: ("", stderr))
+    assert detect_silence(Path("a"), cfg) == []
+
+
+def test_detect_silence_negative_start_clamped(monkeypatch, cfg):
+    # ffmpeg can log a slightly negative silence_start near t=0; clamp it.
+    stderr = "\n".join([
+        "[silencedetect] silence_start: -0.001",
+        "[silencedetect] silence_end: 1.5 | silence_duration: 1.5",
+    ])
+    monkeypatch.setattr(audio_mod, "run", lambda cmd: ("", stderr))
+    assert detect_silence(Path("a"), cfg) == [(0.0, 1.5)]
 
 
 def test_extract_chunk_builds_correct_ffmpeg_args(monkeypatch, cfg):

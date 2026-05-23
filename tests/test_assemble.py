@@ -21,11 +21,24 @@ def test_single_chunk_keeps_in_order():
     assert _texts(assemble([ch], [segs])) == ["a", "b"]
 
 
-def test_drops_segment_starting_past_logical_end():
-    # a segment starting in the right pad belongs to the next chunk
+def test_non_final_chunk_defers_segment_starting_past_logical_end():
+    # a segment starting in the right pad belongs to the next chunk, which owns
+    # that time -- so a *non-final* chunk drops it and the next chunk keeps it.
+    ch0 = Chunk(0, 0.0, 10.0, 0.0, 10.5)
+    ch1 = Chunk(1, 10.0, 20.0, 9.5, 20.5)
+    segs0 = [Segment(2, 3, "keep"), Segment(10.0, 10.4, "next-owns")]
+    segs1 = [Segment(10.0, 10.4, "next-owns"), Segment(12, 13, "more")]
+    out = _texts(assemble([ch0, ch1], [segs0, segs1]))
+    assert out == ["keep", "next-owns", "more"]
+    assert out.count("next-owns") == 1  # ch0 deferred it, ch1 kept it once
+
+
+def test_last_chunk_keeps_trailing_segment():
+    # the final chunk has no successor to defer to, so a segment starting in its
+    # last moments (which a non-final chunk would drop) must survive.
     ch = Chunk(0, 0.0, 10.0, 0.0, 10.5)
-    segs = [Segment(2, 3, "keep"), Segment(10.0, 10.4, "next-owns")]
-    assert _texts(assemble([ch], [segs])) == ["keep"]
+    segs = [Segment(2, 3, "a"), Segment(9.95, 10.4, "tail")]
+    assert _texts(assemble([ch], [segs])) == ["a", "tail"]
 
 
 def test_drops_bleeding_tail_past_extract_window():

@@ -13,9 +13,9 @@ from .config import Config
 from .proc import run, run_async
 from .types import Chunk
 
-_SILENCE_START_RE = re.compile(r"silence_start:\s*([0-9.]+)")
+_SILENCE_START_RE = re.compile(r"silence_start:\s*(-?[0-9.]+)")
 _SILENCE_END_RE = re.compile(
-    r"silence_end:\s*([0-9.]+)\s*\|\s*silence_duration:\s*([0-9.]+)"
+    r"silence_end:\s*(-?[0-9.]+)\s*\|\s*silence_duration:\s*([0-9.]+)"
 )
 
 
@@ -31,11 +31,17 @@ def probe_duration(source: Path, cfg: Config) -> float:
     return float(stdout.strip())
 
 
-def detect_silence(source: Path, cfg: Config) -> list[tuple[float, float]]:
+def detect_silence(
+    source: Path, cfg: Config, duration: float | None = None
+) -> list[tuple[float, float]]:
     """Return (start, end) silence intervals in seconds, parsed from ffmpeg.
 
     ffmpeg's ``silencedetect`` filter logs ``silence_start`` / ``silence_end``
     lines to stderr; we run it against a null output purely to harvest those.
+
+    When the file *ends* in silence ffmpeg emits a ``silence_start`` with no
+    matching ``silence_end``; if *duration* is given we close that trailing
+    interval at the end of the file so the planner can still cut there.
     """
     _, stderr = run([
         cfg.ffmpeg_bin,
@@ -49,7 +55,7 @@ def detect_silence(source: Path, cfg: Config) -> list[tuple[float, float]]:
     pending_start: float | None = None
     for line in stderr.splitlines():
         if m := _SILENCE_START_RE.search(line):
-            pending_start = float(m.group(1))
+            pending_start = max(0.0, float(m.group(1)))
         elif m := _SILENCE_END_RE.search(line):
             end = float(m.group(1))
             if pending_start is None:
@@ -57,6 +63,9 @@ def detect_silence(source: Path, cfg: Config) -> list[tuple[float, float]]:
                 pending_start = max(0.0, end - float(m.group(2)))
             intervals.append((pending_start, end))
             pending_start = None
+    # Silence that runs to EOF has a start but no end; close it at the duration.
+    if pending_start is not None and duration is not None and duration > pending_start:
+        intervals.append((pending_start, duration))
     return intervals
 
 
