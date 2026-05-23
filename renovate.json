@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the whisper.cpp git ref built in the Dockerfile",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG WHISPER_CPP_REF=(?<currentValue>\\S+)"],
+      "depNameTemplate": "ggml-org/whisper.cpp",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
+  "automerge": true
+}

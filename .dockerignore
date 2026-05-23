@@ -1,0 +1,16 @@
+# Keep the build context tiny — only pyproject/README/src are needed to build.
+.git
+.gitignore
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.coverage
+htmlcov
+dist
+build
+*.egg-info
+tests
+Dockerfile
+.dockerignore
+.DS_Store

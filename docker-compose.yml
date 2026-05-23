@@ -1,0 +1,64 @@
+# Run the OpenAI-compatible transcription service:
+#
+#   mkdir -p models && cp /path/to/ggml-base.en.bin models/
+#   docker compose up --build
+#
+# Then: curl -F file=@audio.mp3 -F response_format=srt \
+#            http://localhost:8000/v1/audio/transcriptions
+#
+# Values like ${WHISPER_MODEL_FILE} below are read from your shell or a .env
+# file next to this one, so you can re-point things without editing the file.
+
+services:
+  whisper-batch:
+    build:
+      context: .
+      args:
+        # Which whisper.cpp release to compile (see Dockerfile).
+        WHISPER_CPP_REF: v1.8.4
+        # OFF -> portable image (any arm64/x86-64 CPU). Set ON to optimise for
+        # this host's exact microarch (a small speed-up, non-portable binary).
+        GGML_NATIVE: "OFF"
+    image: whisper-batch:latest          # tag applied to the built image
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"                      # host:container — change the left side to relocate
+
+    volumes:
+      # Models are kept out of the image. Drop your .bin files in ./models and
+      # point WHISPER_MODEL at one (read-only mount; the service never writes here).
+      - ./models:/models:ro
+
+    environment:
+      # REQUIRED — path to the ggml model *inside the container*.
+      WHISPER_MODEL: /models/${WHISPER_MODEL_FILE:-ggml-base.en.bin}
+      # OPTIONAL — when set, requests must send `Authorization: Bearer <key>`.
+      # Leave unset/empty for an open endpoint (e.g. behind a private network).
+      WHISPER_BATCH_API_KEY: ${WHISPER_BATCH_API_KEY:-}
+
+    # Args are appended to the image's entrypoint
+    # (`whisper-batch-server --host 0.0.0.0 --port 8000`). Tune the warm pool here:
+    #   -w  warm whisper-server instances (= max chunks in flight)
+    #   -t  threads per instance
+    #   -l  force a language code (omit to auto-detect per chunk)
+    #   --no-gpu  required: the image is built CPU-only
+    #   -v / -vv  INFO / DEBUG logging
+    command: ["-w", "4", "-t", "2", "--no-gpu"]
+
+    # Cap the cores/memory this container may use. NOTE: Python reads the *host*
+    # CPU count, not this cgroup limit — so set -w/-t above to match `cpus` here
+    # rather than relying on auto-detection. Rule of thumb: workers x threads ~= cpus.
+    deploy:
+      resources:
+        limits:
+          cpus: "8.0"
+          memory: 8g
+
+    # A HEALTHCHECK (polls /health) is baked into the image; uncomment to override.
+    # healthcheck:
+    #   test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=3).status==200 else 1)"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   start_period: 180s
+    #   retries: 3

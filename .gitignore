@@ -22,3 +22,7 @@ htmlcov/
 # Transcription scratch / outputs
 *.wav.json
 whisper_batch_*/
+
+# Local model files (mounted into the container via docker-compose.yml)
+models/
+*.bin
