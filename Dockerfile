@@ -40,6 +40,7 @@ COPY --from=whisper-build /src/build/bin/whisper-server /usr/local/bin/whisper-s
 # Install the package with its HTTP server extra (CPU core stays dependency-free;
 # the extra pulls FastAPI/uvicorn/python-multipart, all prebuilt wheels).
 WORKDIR /app
+COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-cache-dir ".[server]"
 
