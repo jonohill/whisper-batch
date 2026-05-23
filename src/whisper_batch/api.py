@@ -17,6 +17,7 @@ Optional dependency: this module needs the ``server`` extra
 from __future__ import annotations
 
 import argparse
+import hmac
 import logging
 import os
 import shutil
@@ -59,7 +60,9 @@ class Transcriber:
         self.cfg = cfg
         self.backend = backend
 
-    async def transcribe(self, source: Path, *, language: str | None = None) -> Transcript:
+    async def transcribe(
+        self, source: Path, *, language: str | None = None
+    ) -> Transcript:
         cfg = replace(self.cfg, language=language) if language else self.cfg
         return await transcribe_file(source, cfg, progress=False, backend=self.backend)
 
@@ -71,7 +74,8 @@ async def _require_auth(request: Request) -> None:
         return
     header = request.headers.get("authorization", "")
     token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-    if token != expected:
+
+    if not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=401, detail="invalid or missing API key")
 
 
@@ -86,12 +90,16 @@ async def _save_upload(file: UploadFile) -> Path:
     return dest
 
 
-def _render(transcript: Transcript, response_format: str, language: str | None) -> Response:
+def _render(
+    transcript: Transcript, response_format: str, language: str | None
+) -> Response:
     """Serialise *transcript* in the requested OpenAI response_format."""
     if response_format == "text":
         return PlainTextResponse(transcript.text)
     if response_format == "srt":
-        return PlainTextResponse(output.render_srt(transcript), media_type="application/x-subrip")
+        return PlainTextResponse(
+            output.render_srt(transcript), media_type="application/x-subrip"
+        )
     if response_format == "vtt":
         return PlainTextResponse(output.render_vtt(transcript), media_type="text/vtt")
     if response_format == "verbose_json":
@@ -146,7 +154,9 @@ def _register_routes(app: FastAPI) -> None:
     async def transcriptions(  # noqa: D401 - FastAPI route
         request: Request,
         file: UploadFile = File(...),
-        model: str = Form("whisper-1"),  # accepted for compatibility; pool model is fixed
+        model: str = Form(
+            "whisper-1"
+        ),  # accepted for compatibility; pool model is fixed
         language: str | None = Form(None),
         prompt: str | None = Form(None),  # noqa: ARG001 - accepted, not yet applied
         response_format: str = Form("json"),
@@ -210,21 +220,40 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         description="OpenAI-compatible HTTP transcription service over a warm whisper.cpp pool.",
     )
     p.add_argument(
-        "-m", "--model", default=os.environ.get("WHISPER_MODEL"),
+        "-m",
+        "--model",
+        default=os.environ.get("WHISPER_MODEL"),
         help="path to a ggml whisper model (or set WHISPER_MODEL)",
     )
-    p.add_argument("--host", default="0.0.0.0", help="HTTP bind host (default: 0.0.0.0)")
-    p.add_argument("--port", type=int, default=8000, help="HTTP bind port (default: 8000)")
+    p.add_argument(
+        "--host", default="0.0.0.0", help="HTTP bind host (default: 0.0.0.0)"
+    )
+    p.add_argument(
+        "--port", type=int, default=8000, help="HTTP bind port (default: 8000)"
+    )
     p.add_argument("-w", "--workers", type=int, help="warm whisper-server instances")
     p.add_argument("-t", "--threads", type=int, default=2, help="threads per worker")
-    p.add_argument("-l", "--language", help="default language code (default: auto-detect)")
-    p.add_argument("--whisper-server-bin", default="whisper-server",
-                   help="whisper.cpp server binary")
-    p.add_argument("--server-host", default="127.0.0.1", help="host for the internal pool")
-    p.add_argument("--server-port", type=int, default=18080,
-                   help="base port for the internal pool (uses port .. port+workers-1)")
+    p.add_argument(
+        "-l", "--language", help="default language code (default: auto-detect)"
+    )
+    p.add_argument(
+        "--whisper-server-bin",
+        default="whisper-server",
+        help="whisper.cpp server binary",
+    )
+    p.add_argument(
+        "--server-host", default="127.0.0.1", help="host for the internal pool"
+    )
+    p.add_argument(
+        "--server-port",
+        type=int,
+        default=18080,
+        help="base port for the internal pool (uses port .. port+workers-1)",
+    )
     p.add_argument("--no-gpu", action="store_true", help="disable GPU (passes -ng)")
-    p.add_argument("-v", "--verbose", action="count", default=0, help="-v info, -vv debug")
+    p.add_argument(
+        "-v", "--verbose", action="count", default=0, help="-v info, -vv debug"
+    )
     return p.parse_args(argv)
 
 
