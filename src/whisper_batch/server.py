@@ -152,10 +152,19 @@ class ServerBackend:
         if self._logdir and not self.cfg.keep_temp:
             shutil.rmtree(self._logdir, ignore_errors=True)
 
-    async def transcribe(self, wav_path: Path) -> list[Segment]:
-        """Transcribe *wav_path* into chunk-local segments."""
+    async def transcribe(
+        self, wav_path: Path, *, language: str | None = None
+    ) -> list[Segment]:
+        """Transcribe *wav_path* into chunk-local segments.
+
+        *language* overrides the pool's configured language for this request
+        (the warm servers themselves stay in auto-detect), letting one shared
+        pool serve requests in different languages. Falls back to the config's
+        language, then to whisper auto-detection.
+        """
         if self._free is None:
             raise RuntimeError("ServerBackend.start() was not called")
+        lang = language or self.cfg.language or "auto"
         server = await self._free.get()
         try:
             body = await asyncio.to_thread(
@@ -163,7 +172,7 @@ class ServerBackend:
                 server.inference_url,
                 "file",
                 wav_path,
-                {"response_format": "srt", "language": self.cfg.language or "auto"},
+                {"response_format": "srt", "language": lang},
             )
         finally:
             self._free.put_nowait(server)

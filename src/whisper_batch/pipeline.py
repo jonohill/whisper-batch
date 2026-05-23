@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import shutil
 import tempfile
+from contextlib import nullcontext
 from pathlib import Path
 
 from . import audio, segmentation
@@ -24,9 +25,19 @@ log = logging.getLogger(__name__)
 
 
 async def transcribe_file(
-    source: Path, cfg: Config, *, progress: bool = True
+    source: Path,
+    cfg: Config,
+    *,
+    progress: bool = True,
+    backend: ServerBackend | None = None,
 ) -> Transcript:
-    """Run the full pipeline over *source* and return the assembled transcript."""
+    """Run the full pipeline over *source* and return the assembled transcript.
+
+    *backend* lets a long-running caller (the HTTP server) supply an
+    already-started, shared warm pool that outlives a single file. When omitted
+    — the CLI's one-shot case — a pool is spawned for the duration of this call
+    and torn down afterwards.
+    """
     duration = audio.probe_duration(source, cfg)
     log.info("duration: %.1fs", duration)
 
@@ -40,9 +51,14 @@ async def transcribe_file(
 
     workdir = Path(tempfile.mkdtemp(prefix="whisper_batch_"))
     log.debug("workdir: %s", workdir)
-    backend = ServerBackend(cfg)
+
+    # Own the backend (start/stop it) only if the caller didn't hand us one.
+    owns_backend = backend is None
+    if owns_backend:
+        backend = ServerBackend(cfg)
+    lifecycle = backend if owns_backend else nullcontext()
     try:
-        async with backend:
+        async with lifecycle:
             chunk_segments = await transcribe_chunks(
                 source, chunks, workdir, cfg, backend, progress=progress
             )

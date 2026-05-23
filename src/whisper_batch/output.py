@@ -18,11 +18,15 @@ def _fmt_timestamp(seconds: float, sep: str = ",") -> str:
     return f"{h:02d}:{m:02d}:{s:02d}{sep}{ms:03d}"
 
 
-def write_txt(transcript: Transcript, path: Path) -> None:
-    path.write_text("\n".join(s.text for s in transcript.segments) + "\n", encoding="utf-8")
+# --- Renderers: format a transcript to a string. ---------------------------
+# Split out from the file writers so the HTTP server can reuse them to build
+# response bodies without going through the filesystem.
+
+def render_txt(transcript: Transcript) -> str:
+    return "\n".join(s.text for s in transcript.segments) + "\n"
 
 
-def write_srt(transcript: Transcript, path: Path) -> None:
+def render_srt(transcript: Transcript) -> str:
     lines: list[str] = []
     for i, seg in enumerate(transcript.segments, start=1):
         lines += [
@@ -31,10 +35,10 @@ def write_srt(transcript: Transcript, path: Path) -> None:
             seg.text,
             "",
         ]
-    path.write_text("\n".join(lines), encoding="utf-8")
+    return "\n".join(lines)
 
 
-def write_vtt(transcript: Transcript, path: Path) -> None:
+def render_vtt(transcript: Transcript) -> str:
     lines = ["WEBVTT", ""]
     for seg in transcript.segments:
         lines += [
@@ -42,15 +46,33 @@ def write_vtt(transcript: Transcript, path: Path) -> None:
             seg.text,
             "",
         ]
-    path.write_text("\n".join(lines), encoding="utf-8")
+    return "\n".join(lines)
 
 
-def write_json(transcript: Transcript, path: Path) -> None:
+def render_json(transcript: Transcript) -> str:
     data = [
         {"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text}
         for s in transcript.segments
     ]
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+# --- Writers: render to a string, then write it to disk. --------------------
+
+def write_txt(transcript: Transcript, path: Path) -> None:
+    path.write_text(render_txt(transcript), encoding="utf-8")
+
+
+def write_srt(transcript: Transcript, path: Path) -> None:
+    path.write_text(render_srt(transcript), encoding="utf-8")
+
+
+def write_vtt(transcript: Transcript, path: Path) -> None:
+    path.write_text(render_vtt(transcript), encoding="utf-8")
+
+
+def write_json(transcript: Transcript, path: Path) -> None:
+    path.write_text(render_json(transcript), encoding="utf-8")
 
 
 WRITERS: dict[str, Callable[[Transcript, Path], None]] = {

@@ -23,7 +23,7 @@ def _fake_backend_class(events):
         async def __aexit__(self, *exc):
             events.append("exit")
 
-        async def transcribe(self, wav):
+        async def transcribe(self, wav, *, language=None):
             return [Segment(0.5, 1.0, "hi")]   # chunk-local
 
     return FakeBackend

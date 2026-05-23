@@ -41,7 +41,7 @@ async def transcribe_chunks(
         async with sem:
             wav = workdir / f"chunk_{chunk.index:05d}.wav"
             await audio.extract_chunk(source, chunk, wav, cfg)
-            local = await backend.transcribe(wav)
+            local = await backend.transcribe(wav, language=cfg.language)
             if not cfg.keep_temp:
                 wav.unlink(missing_ok=True)
         # Timestamps are relative to the (padded) extract window.

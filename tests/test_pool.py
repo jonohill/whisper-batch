@@ -24,7 +24,7 @@ async def test_offsets_by_extract_start_and_aligns(monkeypatch, tmp_path):
     ]
 
     class FakeBackend:
-        async def transcribe(self, wav):
+        async def transcribe(self, wav, *, language=None):
             return [Segment(1.0, 2.0, "w")]   # chunk-local timestamps
 
     result = await transcribe_chunks(
@@ -43,7 +43,7 @@ async def test_concurrency_is_capped(monkeypatch, tmp_path):
     state = {"current": 0, "peak": 0}
 
     class FakeBackend:
-        async def transcribe(self, wav):
+        async def transcribe(self, wav, *, language=None):
             state["current"] += 1
             state["peak"] = max(state["peak"], state["current"])
             await asyncio.sleep(0.02)
@@ -60,7 +60,7 @@ async def test_progress_logging(monkeypatch, tmp_path, capsys):
     chunks = [Chunk(0, 0.0, 65.0, 0.0, 65.0)]
 
     class FakeBackend:
-        async def transcribe(self, wav):
+        async def transcribe(self, wav, *, language=None):
             return []
 
     await transcribe_chunks(Path("s"), chunks, tmp_path, cfg, FakeBackend(), progress=True)
@@ -76,7 +76,7 @@ async def test_keep_temp_false_unlinks(monkeypatch, tmp_path):
     chunks = [Chunk(0, 0.0, 10.0, 0.0, 10.0)]
 
     class FakeBackend:
-        async def transcribe(self, wav):
+        async def transcribe(self, wav, *, language=None):
             return []
 
     result = await transcribe_chunks(Path("s"), chunks, tmp_path, cfg, FakeBackend(), progress=False)
