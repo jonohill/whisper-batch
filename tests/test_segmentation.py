@@ -58,6 +58,29 @@ def test_extract_window_padding_and_clamping():
     assert chunks[-1].extract_end == 100.0
 
 
+def test_extract_pad_clamped_within_narrow_silence():
+    # silence (49.6, 50.0) is narrower than 2*overlap, so the pad would spill
+    # out of it; clamping keeps each side inside the silence interval.
+    cfg = _cfg(max_chunk_s=28.0, overlap_s=0.5)
+    chunks = plan_chunks(100.0, [(49.6, 50.0)], cfg)
+    # midpoint 49.8 -> chunks [0,28] [28,49.8] [49.8,77.8] [77.8,100]
+    assert round(chunks[1].end, 2) == 49.8
+    # left chunk's trailing pad clamped to the silence end (not 49.8+0.5=50.3)
+    assert chunks[1].extract_end == 50.0
+    # right chunk's leading pad clamped to the silence start (not 49.8-0.5=49.3)
+    assert chunks[2].extract_start == 49.6
+    # the two clips overlap only inside the silence -> no shared speech
+    assert chunks[2].extract_start >= 49.6 and chunks[1].extract_end <= 50.0
+
+
+def test_forced_cut_keeps_symmetric_pad():
+    # with no silence to clamp to, the pad falls back to plain overlap_s
+    cfg = _cfg(max_chunk_s=28.0, overlap_s=0.5)
+    chunks = plan_chunks(60.0, [], cfg)
+    assert chunks[1].extract_start == chunks[1].start - 0.5
+    assert chunks[0].extract_end == chunks[0].end + 0.5
+
+
 def test_prefers_latest_midpoint_within_window():
     cfg = _cfg(max_chunk_s=28.0, min_chunk_s=1.0)
     # three candidate midpoints all within the first window -> pick the latest

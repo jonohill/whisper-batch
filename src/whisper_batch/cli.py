@@ -40,7 +40,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--overlap", type=float, default=0.5,
                    help="context pad each side of a chunk, s (de-duplicated at assembly)")
     p.add_argument("--silence-noise", type=float, default=-30.0, help="silence floor, dB")
-    p.add_argument("--min-silence", type=float, default=0.5, help="min silence length, s")
+    p.add_argument("--min-silence", type=float, default=0.3, help="min silence length, s")
     p.add_argument("--whisper-server-bin", default="whisper-server",
                    help="whisper.cpp server binary")
     p.add_argument("--server-host", default="127.0.0.1", help="host for the server pool")

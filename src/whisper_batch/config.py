@@ -42,7 +42,10 @@ class Config:
     min_chunk_s: float = 1.0         # avoid wastefully tiny chunks
     overlap_s: float = 0.5           # context pad each side of a chunk (for clean cuts)
     silence_noise_db: float = -30.0  # ffmpeg silencedetect noise floor (dB)
-    min_silence_s: float = 0.5       # ffmpeg silencedetect minimum silence (s)
+    # Short enough to catch inter-phrase pauses in speech: at 0.5s many speech
+    # windows have no qualifying pause, forcing mid-word hard cuts (and seam
+    # duplication). 0.3s finds clean word-gaps to cut at instead.
+    min_silence_s: float = 0.3       # ffmpeg silencedetect minimum silence (s)
 
     # Misc
     keep_temp: bool = False
