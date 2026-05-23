@@ -24,7 +24,7 @@ RUN cmake -S . -B build \
     && cmake --build build --target whisper-server -j "$(nproc)"
 
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 LABEL org.opencontainers.image.title="whisper-batch" \
       org.opencontainers.image.description="OpenAI-compatible HTTP transcription service over a warm whisper.cpp pool" \
