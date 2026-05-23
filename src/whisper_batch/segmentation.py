@@ -32,7 +32,7 @@ def plan_chunks(
         # Prefer the latest silence midpoint within (t + min_chunk_s, hard_end].
         candidate = _latest_in_range(midpoints, t + cfg.min_chunk_s, hard_end)
         cut = candidate if candidate is not None else hard_end
-        if cut <= t:  # guarantee forward progress
+        if cut <= t:  # pragma: no cover - defensive: candidates are always > t
             cut = hard_end
         end = min(cut, duration)
         chunks.append(

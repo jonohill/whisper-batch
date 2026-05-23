@@ -9,6 +9,11 @@ build/
 # uv
 # (uv.lock is intentionally committed)
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Editor / OS
 .DS_Store
 .idea/
