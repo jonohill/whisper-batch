@@ -36,6 +36,9 @@ services:
       # OPTIONAL — when set, requests must send `Authorization: Bearer <key>`.
       # Leave unset/empty for an open endpoint (e.g. behind a private network).
       WHISPER_BATCH_API_KEY: ${WHISPER_BATCH_API_KEY:-}
+      # OPTIONAL — reject uploads larger than this many MB with HTTP 413.
+      # Defaults to 25 (matching OpenAI); set 0 to disable the cap.
+      WHISPER_BATCH_MAX_UPLOAD_MB: ${WHISPER_BATCH_MAX_UPLOAD_MB:-25}
 
     # Args are appended to the image's entrypoint
     # (`whisper-batch-server --host 0.0.0.0 --port 8000`). Tune the warm pool here:

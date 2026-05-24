@@ -47,6 +47,37 @@ log = logging.getLogger(__name__)
 # OpenAI's response_format values; verbose_json carries segment timestamps.
 _FORMATS = {"json", "text", "srt", "verbose_json", "vtt"}
 
+# OpenAI rejects audio uploads over 25 MB (26214400 bytes); match that by default.
+# Set to 0 (or pass --max-upload-mb 0 / WHISPER_BATCH_MAX_UPLOAD_MB=0) to disable.
+_DEFAULT_MAX_UPLOAD_MB = 25.0
+_DEFAULT_MAX_UPLOAD_BYTES = int(_DEFAULT_MAX_UPLOAD_MB * (1 << 20))
+
+
+class _UploadTooLarge(Exception):
+    """Raised mid-stream once an upload exceeds the configured size cap."""
+
+    def __init__(self, max_bytes: int) -> None:
+        super().__init__(max_bytes)
+        self.max_bytes = max_bytes
+
+
+async def _upload_too_large(_: Request, exc: _UploadTooLarge) -> JSONResponse:
+    """Render an over-limit upload as an OpenAI-shaped 413."""
+    return JSONResponse(
+        status_code=413,
+        content={
+            "error": {
+                "message": (
+                    f"file exceeds the maximum upload size of "
+                    f"{exc.max_bytes / (1 << 20):g} MB ({exc.max_bytes} bytes)"
+                ),
+                "type": "invalid_request_error",
+                "param": "file",
+                "code": "file_too_large",
+            }
+        },
+    )
+
 
 class Transcriber:
     """Adapts the file pipeline to a shared, already-warm backend.
@@ -79,14 +110,28 @@ async def _require_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="invalid or missing API key")
 
 
-async def _save_upload(file: UploadFile) -> Path:
-    """Stream *file* to a fresh temp dir (ffmpeg needs a real path). Caller cleans up."""
+async def _save_upload(file: UploadFile, max_bytes: int = 0) -> Path:
+    """Stream *file* to a fresh temp dir (ffmpeg needs a real path). Caller cleans up.
+
+    With *max_bytes* > 0, abort once the upload exceeds it (raising
+    :class:`_UploadTooLarge`). The check is mid-stream so we never buffer a huge
+    file, and the half-written temp dir is removed before raising so a rejected
+    upload leaves nothing behind.
+    """
     tmpdir = Path(tempfile.mkdtemp(prefix="whisper_api_"))
     suffix = Path(file.filename or "").suffix
     dest = tmpdir / f"upload{suffix}"
-    with dest.open("wb") as out:
-        while chunk := await file.read(1 << 20):
-            out.write(chunk)
+    size = 0
+    try:
+        with dest.open("wb") as out:
+            while chunk := await file.read(1 << 20):
+                size += len(chunk)
+                if max_bytes and size > max_bytes:
+                    raise _UploadTooLarge(max_bytes)
+                out.write(chunk)
+    except BaseException:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise
     return dest
 
 
@@ -140,7 +185,7 @@ def _register_routes(app: FastAPI) -> None:
                 f"expected one of {sorted(_FORMATS)}",
             )
         transcriber: Transcriber = request.app.state.transcriber
-        audio_path = await _save_upload(file)
+        audio_path = await _save_upload(file, request.app.state.max_upload_bytes)
         try:
             transcript = await transcriber.transcribe(audio_path, language=language)
         except CommandError as exc:
@@ -184,17 +229,20 @@ def create_app(
     transcriber: Transcriber | None = None,
     cfg: Config | None = None,
     api_key: str | None = None,
+    max_upload_bytes: int = _DEFAULT_MAX_UPLOAD_BYTES,
 ) -> FastAPI:
     """Build the app.
 
     In production pass *cfg*: the lifespan starts one shared warm pool and tears
     it down on shutdown. Tests pass a ready-made *transcriber* to skip spawning
-    real whisper-server processes.
+    real whisper-server processes. *max_upload_bytes* caps request uploads
+    (0 disables the cap; default matches OpenAI's 25 MB).
     """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.api_key = api_key
+        app.state.max_upload_bytes = max_upload_bytes
         if transcriber is not None:
             app.state.transcriber = transcriber
             yield
@@ -210,6 +258,7 @@ def create_app(
             await backend.stop()
 
     app = FastAPI(title="whisper-batch", version="0.1.0", lifespan=lifespan)
+    app.add_exception_handler(_UploadTooLarge, _upload_too_large)
     _register_routes(app)
     return app
 
@@ -252,6 +301,16 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     p.add_argument("--no-gpu", action="store_true", help="disable GPU (passes -ng)")
     p.add_argument(
+        "--max-upload-mb",
+        type=float,
+        default=float(
+            os.environ.get("WHISPER_BATCH_MAX_UPLOAD_MB") or _DEFAULT_MAX_UPLOAD_MB
+        ),
+        help="reject uploads larger than this many MB with HTTP 413 "
+        f"(0 = no limit; default {_DEFAULT_MAX_UPLOAD_MB:g}, matching OpenAI). "
+        "Also set via WHISPER_BATCH_MAX_UPLOAD_MB.",
+    )
+    p.add_argument(
         "-v", "--verbose", action="count", default=0, help="-v info, -vv debug"
     )
     return p.parse_args(argv)
@@ -281,7 +340,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.workers:
         cfg.workers = args.workers
 
-    app = create_app(cfg=cfg, api_key=os.environ.get("WHISPER_BATCH_API_KEY"))
+    max_upload_bytes = (
+        int(args.max_upload_mb * (1 << 20)) if args.max_upload_mb > 0 else 0
+    )
+    app = create_app(
+        cfg=cfg,
+        api_key=os.environ.get("WHISPER_BATCH_API_KEY"),
+        max_upload_bytes=max_upload_bytes,
+    )
     uvicorn.run(app, host=args.host, port=args.port)
     return 0
 

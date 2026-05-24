@@ -32,9 +32,11 @@ class FakeTranscriber:
         return Transcript([Segment(0.0, 1.5, "Olá mundo"), Segment(1.5, 3.0, "second")])
 
 
-def _client(transcriber: FakeTranscriber | None = None, *, api_key: str | None = None):
+def _client(transcriber: FakeTranscriber | None = None, *, api_key: str | None = None,
+            max_upload_bytes: int | None = None):
     transcriber = transcriber or FakeTranscriber()
-    app = create_app(transcriber=transcriber, api_key=api_key)
+    extra = {} if max_upload_bytes is None else {"max_upload_bytes": max_upload_bytes}
+    app = create_app(transcriber=transcriber, api_key=api_key, **extra)
     return TestClient(app), transcriber
 
 
@@ -135,6 +137,49 @@ def test_upload_temp_is_cleaned_up():
     saved_path = fake.calls[0][0]
     assert not saved_path.exists()               # per-request temp dir removed
     assert not saved_path.parent.exists()
+
+
+def test_oversized_upload_is_413_openai_shape():
+    client, fake = _client(max_upload_bytes=4)
+    with client:
+        r = _post(client, file=b"way too many bytes")
+    assert r.status_code == 413
+    # OpenAI-style error envelope, not FastAPI's bare {"detail": ...}.
+    err = r.json()["error"]
+    assert err["type"] == "invalid_request_error"
+    assert err["code"] == "file_too_large"
+    assert err["param"] == "file"
+    assert "4 bytes" in err["message"]
+    assert fake.calls == []                       # rejected before transcription
+
+
+def test_oversized_upload_leaves_no_temp_dir(tmp_path, monkeypatch):
+    def fake_mkdtemp(**_kw):
+        d = tmp_path / "up"
+        d.mkdir()
+        return str(d)
+
+    monkeypatch.setattr(api_mod.tempfile, "mkdtemp", fake_mkdtemp)
+    client, _ = _client(max_upload_bytes=4)
+    with client:
+        assert _post(client, file=b"too big").status_code == 413
+    assert not (tmp_path / "up").exists()         # half-written upload cleaned up
+
+
+def test_upload_under_limit_passes():
+    client, fake = _client(max_upload_bytes=1 << 20)
+    with client:
+        r = _post(client, file=b"small")
+    assert r.status_code == 200
+    assert fake.calls[0][2] == b"small"
+
+
+def test_unlimited_upload_when_cap_zero():
+    client, fake = _client(max_upload_bytes=0)
+    with client:
+        r = _post(client, file=b"x" * 4096)
+    assert r.status_code == 200
+    assert fake.calls[0][2] == b"x" * 4096
 
 
 def test_inference_alias():
