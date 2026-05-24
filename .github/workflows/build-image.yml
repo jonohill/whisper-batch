@@ -30,7 +30,7 @@ jobs:
         env:
           platform: ${{ matrix.platform }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Image labels
         id: meta
