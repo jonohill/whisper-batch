@@ -2,7 +2,7 @@
 
 FROM debian:bookworm-slim AS whisper-build
 
-ARG WHISPER_CPP_REF=v1.8.4
+ARG WHISPER_CPP_REF=v1.8.5
 ARG GGML_NATIVE=OFF
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -24,7 +24,7 @@ RUN cmake -S . -B build \
     && cmake --build build --target whisper-server -j "$(nproc)"
 
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 LABEL org.opencontainers.image.title="whisper-batch" \
       org.opencontainers.image.description="OpenAI-compatible HTTP transcription service over a warm whisper.cpp pool" \
