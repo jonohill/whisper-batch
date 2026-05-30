@@ -1,12 +1,14 @@
 # Run the OpenAI-compatible transcription service:
 #
-#   mkdir -p models && cp /path/to/ggml-base.en.bin models/
 #   docker compose up --build
+#
+# On first start the model named by WHISPER_MODEL_NAME (default base.en) is
+# downloaded from Hugging Face into the `models` named volume and reused after.
 #
 # Then: curl -F file=@audio.mp3 -F response_format=srt \
 #            http://localhost:8000/v1/audio/transcriptions
 #
-# Values like ${WHISPER_MODEL_FILE} below are read from your shell or a .env
+# Values like ${WHISPER_MODEL_NAME} below are read from your shell or a .env
 # file next to this one, so you can re-point things without editing the file.
 
 services:
@@ -19,20 +21,23 @@ services:
         # OFF -> portable image (any arm64/x86-64 CPU). Set ON to optimise for
         # this host's exact microarch (a small speed-up, non-portable binary).
         GGML_NATIVE: "OFF"
-    image: whisper-batch:latest          # tag applied to the built image
+    image: whisper-batch:latest # tag applied to the built image
     restart: unless-stopped
 
     ports:
-      - "8000:8000"                      # host:container — change the left side to relocate
+      - "8000:8000" # host:container — change the left side to relocate
 
     volumes:
-      # Models are kept out of the image. Drop your .bin files in ./models and
-      # point WHISPER_MODEL at one (read-only mount; the service never writes here).
-      - ./models:/models:ro
+      # Persistent model cache.
+      - models:/models
 
     environment:
-      # REQUIRED — path to the ggml model *inside the container*.
-      WHISPER_MODEL: /models/${WHISPER_MODEL_FILE:-ggml-base.en.bin}
+      # Model to fetch on first start, by whisper.cpp name (base.en, small, ...).
+      # Resolves to /models/ggml-<name>.bin and downloads it if absent.
+      WHISPER_MODEL_NAME: ${WHISPER_MODEL_NAME:-base.en}
+      # OPTIONAL — explicit path to a model file inside the container. When set
+      # and present, this wins and no download happens (use with a bind mount).
+      WHISPER_MODEL: ${WHISPER_MODEL:-}
       # OPTIONAL — when set, requests must send `Authorization: Bearer <key>`.
       # Leave unset/empty for an open endpoint (e.g. behind a private network).
       WHISPER_BATCH_API_KEY: ${WHISPER_BATCH_API_KEY:-}
@@ -63,5 +68,9 @@ services:
     #   test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=3).status==200 else 1)"]
     #   interval: 30s
     #   timeout: 5s
-    #   start_period: 180s
+    #   start_period: 300s
     #   retries: 3
+
+volumes:
+  # Holds downloaded ggml models across container restarts and rebuilds.
+  models:

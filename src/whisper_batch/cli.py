@@ -60,8 +60,18 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
-    if not args.model:
-        print("error: no model given (use -m or set WHISPER_MODEL)", file=sys.stderr)
+    from .fetch import resolve_model
+
+    try:
+        model = resolve_model(args.model)
+    except OSError as exc:
+        print(f"error: could not fetch model: {exc}", file=sys.stderr)
+        return 2
+    if model is None:
+        print(
+            "error: no model given (use -m, or set WHISPER_MODEL / WHISPER_MODEL_NAME)",
+            file=sys.stderr,
+        )
         return 2
     if not args.input.exists():
         print(f"error: input not found: {args.input}", file=sys.stderr)
@@ -74,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     cfg = Config(
-        model=Path(args.model),
+        model=model,
         whisper_server_bin=args.whisper_server_bin,
         server_host=args.server_host,
         server_port=args.server_port,

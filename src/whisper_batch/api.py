@@ -324,12 +324,22 @@ def main(argv: list[str] | None = None) -> int:
         level=[logging.WARNING, logging.INFO, logging.DEBUG][min(args.verbose, 2)],
         format="%(levelname)s %(name)s: %(message)s",
     )
-    if not args.model:
-        print("error: no model given (use -m or set WHISPER_MODEL)")
+    from .fetch import resolve_model
+
+    try:
+        model = resolve_model(args.model)
+    except OSError as exc:
+        print(f"error: could not fetch model: {exc}")
+        return 2
+    if model is None:
+        print(
+            "error: no model given "
+            "(use -m, or set WHISPER_MODEL / WHISPER_MODEL_NAME)"
+        )
         return 2
 
     cfg = Config(
-        model=Path(args.model),
+        model=model,
         whisper_server_bin=args.whisper_server_bin,
         server_host=args.server_host,
         server_port=args.server_port,

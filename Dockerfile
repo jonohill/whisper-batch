@@ -44,20 +44,24 @@ COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-cache-dir ".[server]"
 
-# Run unprivileged.
-RUN useradd --create-home --uid 10001 app
+# Run unprivileged. /models is created here so it's owned by the app user and
+# stays writable for the first-start model download (below), even when backed by
+# a named volume.
+RUN useradd --create-home --uid 10001 app \
+    && mkdir -p /models && chown app:app /models
 USER app
 
-# Mount the model here (kept out of the image — models are large and swappable):
-#   docker run -v /path/to/models:/models:ro -e WHISPER_MODEL=/models/ggml-base.en.bin ...
-ENV WHISPER_MODEL=/models/ggml-base.en.bin
+# Name of model (auto-downloaded at start) or path to existing model
+ENV WHISPER_MODEL_NAME=base.en \
+    WHISPER_MODELS_DIR=/models
 VOLUME ["/models"]
 
 EXPOSE 8000
 
 # /health needs no auth, so this works even with WHISPER_BATCH_API_KEY set.
-# Generous start-period: the pool loads the model into every warm server first.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
+# Generous start-period: a first-start model download (cold) plus loading it into
+# every warm server happens before /health goes green.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=300s --retries=3 \
     CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
 
 # CPU-only target -> default to --no-gpu. Override/extend at `docker run` time,
