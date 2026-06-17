@@ -2,7 +2,7 @@
 
 FROM debian:bookworm-slim AS whisper-build
 
-ARG WHISPER_CPP_REF=v1.8.7
+ARG WHISPER_CPP_REF=v1.9.0
 ARG GGML_NATIVE=OFF
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
