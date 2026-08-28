@@ -30,7 +30,15 @@ class CommandError(RuntimeError):
 def run(cmd: Sequence[str]) -> tuple[str, str]:
     """Run *cmd* synchronously. Returns ``(stdout, stderr)``."""
     log.debug("run: %s", " ".join(map(str, cmd)))
-    proc = subprocess.run(list(cmd), capture_output=True, text=True, check=False)
+    # ffmpeg truncates long metadata tag values when dumping them to stderr and
+    # can cut mid-UTF-8-sequence, so decode leniently rather than raising.
+    proc = subprocess.run(
+        list(cmd),
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     if proc.returncode != 0:
         raise CommandError(cmd, proc.returncode, proc.stderr)
     return proc.stdout, proc.stderr

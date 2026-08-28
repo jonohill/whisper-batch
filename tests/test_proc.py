@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from whisper_batch.proc import CommandError, run, run_async
@@ -16,6 +18,15 @@ def test_run_returns_stdout():
 def test_run_captures_stderr():
     _, err = run(["sh", "-c", "printf oops 1>&2"])
     assert "oops" in err
+
+
+def test_run_tolerates_invalid_utf8_stderr():
+    # \xe2\x80 is a truncated UTF-8 sequence (partial U+2019).
+    _, err = run([
+        sys.executable, "-c",
+        r"import sys; sys.stderr.buffer.write(b'Meta\xe2\x80')",
+    ])
+    assert err.startswith("Meta")
 
 
 def test_run_raises_on_failure():
